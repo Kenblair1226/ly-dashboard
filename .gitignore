@@ -1,0 +1,26 @@
+# deps
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.next/
+dist/
+build/
+
+# env
+.env
+.env.local
+*.local
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# logs
+*.log
+
+# data dumps
+*.sqlite
+*.db
