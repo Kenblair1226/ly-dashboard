@@ -190,13 +190,41 @@ def sync_votes_all() -> None:
         log.exception("votes sync failed: %s", exc)
 
 
-def main() -> None:
+def run_once() -> None:
     for t in TARGETS:
         try:
             sync_legislator(t)
         except Exception as exc:
             log.exception("Sync failed for %s: %s", t.name, exc)
     sync_votes_all()
+
+
+def main() -> None:
+    """Run sync. If RUN_MODE=loop, sleep until next 02:00 Asia/Taipei (=18:00 UTC) and repeat."""
+    import os
+    import time as _time
+    from datetime import timedelta, timezone
+
+    mode = os.environ.get("RUN_MODE", "once").lower()
+    if mode != "loop":
+        run_once()
+        return
+
+    log.info("Starting in loop mode (daily at 18:00 UTC = 02:00 Asia/Taipei)")
+    # Run immediately on first start
+    run_once()
+    while True:
+        now = datetime.now(timezone.utc)
+        target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target = target + timedelta(days=1)
+        sleep_s = (target - now).total_seconds()
+        log.info("Next sync in %.1f hours (at %s UTC)", sleep_s / 3600, target.isoformat())
+        _time.sleep(sleep_s)
+        try:
+            run_once()
+        except Exception:
+            log.exception("Scheduled sync failed; will retry tomorrow")
 
 
 if __name__ == "__main__":
