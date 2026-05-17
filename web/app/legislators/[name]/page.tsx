@@ -12,6 +12,19 @@ interface Props {
   searchParams: { term?: string };
 }
 
+export async function generateMetadata({ params }: Props) {
+  const name = decodeURIComponent(params.name);
+  return {
+    title: `${name} - 立委動態`,
+    description: `${name} 立法委員的提案、質詢、表決、出席與新聞動態追蹤`,
+    alternates: { canonical: `/legislators/${encodeURIComponent(name)}` },
+    openGraph: {
+      title: `${name} - 立委動態`,
+      description: `${name} 立法委員的提案、質詢、表決、出席與新聞動態`,
+    },
+  };
+}
+
 export default async function LegislatorPage({ params, searchParams }: Props) {
   const name = decodeURIComponent(params.name);
   const term = Number(searchParams?.term || 11);
