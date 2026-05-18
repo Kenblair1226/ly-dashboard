@@ -190,6 +190,31 @@ def sync_votes_all() -> None:
         log.exception("votes sync failed: %s", exc)
 
 
+def sync_news_only() -> None:
+    """Only refresh Google News for all targets (high-frequency)."""
+    from .sources import google_news
+    engine = get_engine()
+    total = 0
+    for t in TARGETS:
+        try:
+            log.info("[news] Fetching news for %s", t.name)
+            items = google_news.fetch_news(t.name)
+            news_rows = [{
+                "legislator_name": t.name,
+                "guid": it["guid"],
+                "title": it["title"],
+                "link": it["link"],
+                "source": it.get("source") or "",
+                "pub_date": it.get("pub_date"),
+            } for it in items]
+            with conn_scope(engine) as conn:
+                n = upsert(conn, "news", news_rows, conflict_cols=["legislator_name", "guid"])
+            total += n
+        except Exception:
+            log.exception("[news] sync failed for %s", t.name)
+    log.info("[news] total upserted: %d", total)
+
+
 def run_once() -> None:
     for t in TARGETS:
         try:
@@ -200,31 +225,64 @@ def run_once() -> None:
 
 
 def main() -> None:
-    """Run sync. If RUN_MODE=loop, sleep until next 02:00 Asia/Taipei (=18:00 UTC) and repeat."""
+    """Run sync.
+
+    Modes:
+      RUN_MODE=once   -> run a full sync once and exit
+      RUN_MODE=news   -> run news-only sync once and exit
+      RUN_MODE=loop   -> daily full sync at 18:00 UTC (02:00 Asia/Taipei),
+                         plus hourly news-only sync in between
+    """
     import os
     import time as _time
     from datetime import timedelta, timezone
 
     mode = os.environ.get("RUN_MODE", "once").lower()
+    if mode == "news":
+        sync_news_only()
+        return
     if mode != "loop":
         run_once()
         return
 
-    log.info("Starting in loop mode (daily at 18:00 UTC = 02:00 Asia/Taipei)")
-    # Run immediately on first start
+    full_sync_hour_utc = int(os.environ.get("FULL_SYNC_HOUR_UTC", "18"))
+    news_interval_min = int(os.environ.get("NEWS_INTERVAL_MIN", "60"))
+
+    log.info(
+        "Starting loop mode: full sync daily at %02d:00 UTC, news every %d min",
+        full_sync_hour_utc, news_interval_min,
+    )
+    # First boot: do a full sync immediately
     run_once()
+    last_full_date = datetime.now(timezone.utc).date()
+
     while True:
         now = datetime.now(timezone.utc)
-        target = now.replace(hour=18, minute=0, second=0, microsecond=0)
-        if target <= now:
-            target = target + timedelta(days=1)
-        sleep_s = (target - now).total_seconds()
-        log.info("Next sync in %.1f hours (at %s UTC)", sleep_s / 3600, target.isoformat())
+        # Next full sync target
+        next_full = now.replace(hour=full_sync_hour_utc, minute=0, second=0, microsecond=0)
+        if next_full <= now or now.date() == last_full_date:
+            next_full = next_full + timedelta(days=1)
+        # Next news tick
+        next_news = now + timedelta(minutes=news_interval_min)
+
+        wake = min(next_full, next_news)
+        sleep_s = max(1.0, (wake - now).total_seconds())
+        log.info("Sleeping %.1f min (next_full=%s next_news=%s UTC)",
+                 sleep_s / 60, next_full.isoformat(), next_news.isoformat())
         _time.sleep(sleep_s)
-        try:
-            run_once()
-        except Exception:
-            log.exception("Scheduled sync failed; will retry tomorrow")
+
+        now2 = datetime.now(timezone.utc)
+        if now2 >= next_full:
+            try:
+                run_once()
+                last_full_date = now2.date()
+            except Exception:
+                log.exception("Scheduled full sync failed; will retry tomorrow")
+        else:
+            try:
+                sync_news_only()
+            except Exception:
+                log.exception("Scheduled news sync failed")
 
 
 if __name__ == "__main__":
