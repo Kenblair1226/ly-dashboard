@@ -171,7 +171,7 @@ export default async function LegislatorPage({ params, searchParams }: Props) {
         <ul className="bg-white border rounded divide-y">
           {news.map((n: any, i: number) => (
             <li key={i} className="p-3">
-              <div className="text-xs text-slate-500">{n.pub_date ? new Date(n.pub_date).toLocaleString("zh-TW") : ""} · {n.source}</div>
+              <div className="text-xs text-slate-500">{n.pub_date ? new Date(n.pub_date).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false }) : ""} · {n.source}</div>
               <a href={n.link} target="_blank" rel="noreferrer" className="text-sm hover:underline">{n.title}</a>
             </li>
           ))}
